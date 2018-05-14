@@ -17,7 +17,7 @@ object SchemeUtils {
   case class LispString(get: String) extends LispVal
   case class LispChar(get: Char) extends LispVal
   case class LispBool(get: Boolean) extends LispVal
-  case class PrimitiveFunc(func: List[LispVal] => IOThrowsError[LispVal]) extends LispVal
+  case class PrimitiveFunc(func: List[LispVal] => ThrowsError[LispVal]) extends LispVal
   case class Func(params: List[String],
                   vararg: Option[String],
                   body: List[LispVal],

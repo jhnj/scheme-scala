@@ -17,7 +17,8 @@ import scala.collection.immutable.HashMap
 import scala.util.Try
 
 class Eval(val env: Env) {
-  type LispPrimitives = Map[String, List[LispVal] => IOThrowsError[LispVal]]
+  type LispPrimitives = Map[String, List[LispVal] => ThrowsError[LispVal]]
+  type LispIOPrimitives = Map[String, List[LispVal] => IOThrowsError[LispVal]]
 
   def eval(lispVal: LispVal): IOThrowsError[LispVal] = lispVal match {
     case s: LispString => rightT(s)
@@ -72,7 +73,7 @@ class Eval(val env: Env) {
     case LispList(f :: args) => for {
       func <- eval(f)
       argValues <- args.traverse(eval)
-      res <- applyF(func)(argValues)
+      res <- applyFunction(func)(argValues)
     } yield res
 
     case badForm =>
@@ -133,12 +134,8 @@ class Eval(val env: Env) {
   def evalCase(conditions: List[LispVal]): ThrowsError[LispVal] =
     ??? // TODO http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html#%_sec_4.2.1
 
-  def applyFunction(func: String)(args: List[LispVal]): IOThrowsError[LispVal] = {
-    primitives.get(func).map(_ (args)).getOrElse(leftT(NotFunction("Primitive function not found", func)))
-  }
-
-  def applyF(func: LispVal)(args: List[LispVal]): IOThrowsError[LispVal] = func match {
-    case PrimitiveFunc(f) => f(args)
+  def applyFunction(func: LispVal)(args: List[LispVal]): IOThrowsError[LispVal] = func match {
+    case PrimitiveFunc(f) => liftThrows(f(args))
     case Func(params, vararg, body, closure) => {
       if (params.length != args.length && vararg.isEmpty)
         leftT(NumArgs(params.length, args))
@@ -174,25 +171,25 @@ class Eval(val env: Env) {
     "mod" -> numericOp(_ % _)
   )
 
-  def numericOp(op: (Double, Double) => Double)(params: List[LispVal]): IOThrowsError[LispVal] = {
+  def numericOp(op: (Double, Double) => Double)(params: List[LispVal]): ThrowsError[LispVal] = {
     if (params.length < 2)
-      leftT(NumArgs(2, params))
+      Left(NumArgs(2, params))
     else
       params
         .map(unpackNumber)
-        .reduce(Apply[IOThrowsError].map2(_, _)(op))
+        .reduce(Apply[ThrowsError].map2(_, _)(op))
         .map(LispNumber)
   }
 
-  def unpackNumber(lispVal: LispVal): IOThrowsError[Double] = eval(lispVal).flatMap {
-    case LispNumber(i) => rightT(i)
+  def unpackNumber(lispVal: LispVal): ThrowsError[Double] = lispVal match {
+    case LispNumber(i) => Right(i)
     case LispString(string) =>
-      liftThrows(Try(string.toDouble).toEither.leftMap(_ => TypeMismatch("number", LispString(string))))
+      Try(string.toDouble).toEither.leftMap(_ => TypeMismatch("number", LispString(string)))
     case LispList(List(elem)) => unpackNumber(elem)
-    case notNumber => leftT(TypeMismatch("number", notNumber))
+    case notNumber => Left(TypeMismatch("number", notNumber))
   }
 
-  def oneParameter(func: LispVal => ThrowsError[LispVal])(list: List[LispVal]): IOThrowsError[LispVal] = liftThrows {
+  def oneParameter(func: LispVal => ThrowsError[LispVal])(list: List[LispVal]): ThrowsError[LispVal] = {
     if (list.length == 1)
       func(list.head)
     else
@@ -233,15 +230,15 @@ class Eval(val env: Env) {
   }
 
   val symbolPrimitives: LispPrimitives = HashMap(
-    "symbol->string" -> (symbolString _).andThen(liftThrows),
-    "string->symbol" -> (stringSymbol _).andThen(liftThrows)
+    "symbol->string" -> (symbolString _),
+    "string->symbol" -> (stringSymbol _)
   )
 
-  def boolBinOp[A](unpacker: LispVal => IOThrowsError[A])
+  def boolBinOp[A](unpacker: LispVal => ThrowsError[A])
                   (op: (A, A) => Boolean)
-                  (args: List[LispVal]): IOThrowsError[LispVal] = {
+                  (args: List[LispVal]): ThrowsError[LispVal] = {
     if (args.length != 2)
-      leftT(NumArgs(2, args))
+      Left(NumArgs(2, args))
     else {
       for {
         a <- unpacker(args.head)
@@ -250,19 +247,19 @@ class Eval(val env: Env) {
     }
   }
 
-  def unpackBoolean(lispVal: LispVal): IOThrowsError[Boolean] = eval(lispVal).flatMap {
-    case LispBool(boolean) => rightT(boolean)
-    case _ => leftT(TypeMismatch("boolean", lispVal))
+  def unpackBoolean(lispVal: LispVal): ThrowsError[Boolean] = lispVal match {
+    case LispBool(boolean) => Right(boolean)
+    case _ => Left(TypeMismatch("boolean", lispVal))
   }
 
-  def unpackString(lispVal: LispVal): IOThrowsError[String] = eval(lispVal).flatMap {
-    case LispString(s) => rightT(s)
-    case n: LispNumber => rightT(n.format)
-    case b: LispBool => rightT(b.format)
-    case _ => leftT(TypeMismatch("string", lispVal))
+  def unpackString(lispVal: LispVal): ThrowsError[String] = lispVal match {
+    case LispString(s) => Right(s)
+    case n: LispNumber => Right(n.format)
+    case b: LispBool => Right(b.format)
+    case _ => Left(TypeMismatch("string", lispVal))
   }
 
-  type BoolBinOp[A] = ((A, A) => Boolean) => List[LispVal] => IOThrowsError[LispVal]
+  type BoolBinOp[A] = ((A, A) => Boolean) => List[LispVal] => ThrowsError[LispVal]
 
   val numberBoolBinOp: BoolBinOp[Double] = boolBinOp(unpackNumber)
   val booleanBoolBinOp: BoolBinOp[Boolean] = boolBinOp(unpackBoolean)
@@ -331,7 +328,7 @@ class Eval(val env: Env) {
   val listPrimitives: LispPrimitives = HashMap(
     "car" -> oneParameter(car),
     "cdr" -> oneParameter(cdr),
-    "cons" -> (cons _).andThen(liftThrows),
+    "cons" -> (cons _),
     "list?" -> oneParameter(isList),
     "null?" -> oneParameter(isNull)
   )
@@ -374,9 +371,9 @@ class Eval(val env: Env) {
     } yield shallow || nested
 
   val equalityPrimitives: LispPrimitives = HashMap(
-    "=" -> (equalityOp(numericEqual) _).andThen(liftThrows),
-    "eqv?" -> (equalityOp(eqv) _).andThen(liftThrows),
-    "equal?" -> (equalityOp(equal) _).andThen(liftThrows)
+    "=" -> (equalityOp(numericEqual) _),
+    "eqv?" -> (equalityOp(eqv) _),
+    "equal?" -> (equalityOp(equal) _)
   )
 
 
