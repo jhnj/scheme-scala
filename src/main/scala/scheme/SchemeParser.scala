@@ -51,8 +51,8 @@ object SchemeParser {
       ))
 
     def parseDottedList =
-      attempt(surround(token("("), token(")"))(
-        token(parseExpr.separator(whitespace1).map(LispList)) ** token(token(".") *> parseExpr)
+      attempt(surround(token("("), ")")(
+        token(parseExpr.separator(whitespace1)) ** token(token(".") *> parseExpr)
       )).map { case (head, tail) => DottedLispList(head, tail) }
 
     def parseExpr: Parser[LispVal] =
@@ -95,3 +95,4 @@ object SchemeParser {
     }
   }
 }
+

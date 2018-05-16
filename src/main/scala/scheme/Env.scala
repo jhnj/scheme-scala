@@ -13,9 +13,9 @@ class Env(val env: mutable.Map[String, LispVal] = mutable.HashMap()) {
 
   def isBound(variable: String): IO[Boolean] = IO(env.isDefinedAt(variable))
 
-  def getVar(variable: String): IOThrowsError[LispVal] = liftThrows {
+  def getVar(variable: String): IOThrowsError[LispVal] = EitherT(IO {
     Either.fromOption(env.get(variable), UnboundVar("Trying to get unbound variable", variable))
-  }
+  })
 
   def setVar(variable: String, value: LispVal): IOThrowsError[LispVal] = EitherT(IO {
     if (env.isDefinedAt(variable)) {

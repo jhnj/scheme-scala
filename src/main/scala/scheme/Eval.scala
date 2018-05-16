@@ -50,7 +50,7 @@ class Eval(val env: Env) {
     } yield v
 
     case LispList(Symbol("define") ::
-      DottedLispList(LispList(Symbol(func) :: params), varargs) ::
+      DottedLispList(Symbol(func) :: params, varargs) ::
       body
     ) => for {
       f <- EitherT.fromEither[IO](makeFunc(params, Some(varargs), body, env))
@@ -61,7 +61,7 @@ class Eval(val env: Env) {
       EitherT.fromEither[IO](makeFunc(params, None, body, env))
 
     case LispList(Symbol("lambda") ::
-      DottedLispList(LispList(params), varargs) ::
+      DottedLispList(params, varargs) ::
       body
     ) =>
       EitherT.fromEither[IO](makeFunc(params, Some(varargs), body, env))
@@ -72,7 +72,9 @@ class Eval(val env: Env) {
     case LispList(List(Symbol("load"), LispString(fileName))) =>
       IOPrimitive
         .load(fileName)
-        .flatMap(_.map(lispVal => eval(lispVal)).last)
+        .flatMap(_.traverse { lispVal =>
+          /*_*/eval(lispVal)/*_*/
+        }).map(LispList)
 
     case LispList(f :: args) => for {
       func <- eval(f)
@@ -290,14 +292,14 @@ class Eval(val env: Env) {
 
   def car(lispVal: LispVal): ThrowsError[LispVal] = lispVal match {
     case LispList(head :: _) => Right(head)
-    case DottedLispList(LispList(head :: _), _) => Right(head)
+    case DottedLispList(head :: _, _) => Right(head)
     case badArg => Left(TypeMismatch("pair", badArg))
   }
 
   def cdr(lispVal: LispVal): ThrowsError[LispVal] = lispVal match {
     case LispList(_ :: tail) => Right(LispList(tail))
-    case DottedLispList(LispList(List(_)), last) => Right(LispList(List(last)))
-    case DottedLispList(LispList(_ :: tail), last) => Right(LispList(tail :+ last))
+    case DottedLispList(List(_), last) => Right(LispList(List(last)))
+    case DottedLispList(_ :: tail, last) => Right(LispList(tail :+ last))
     case badArg => Left(TypeMismatch("pair", badArg))
   }
 
@@ -311,8 +313,9 @@ class Eval(val env: Env) {
             LispList(List(head))
           case List(head, LispList(tail)) => LispList(head +: tail)
           case List(head, DottedLispList(listPart, last)) =>
-            DottedLispList(LispList(head +: listPart.get), last)
-          case List(head, last) => DottedLispList(LispList(List(head)), last)
+            DottedLispList(head +: listPart, last)
+          case List(LispList(l), last) => DottedLispList(l, last)
+          case List(head, last) => DottedLispList(List(head), last)
         }
       )
     }
@@ -369,7 +372,7 @@ class Eval(val env: Env) {
       shallow <- eqv(a, b)
       nested <- (a, b) match {
         case (DottedLispList(l1, last1), DottedLispList(l2, last2)) =>
-          equal(LispList(l1.get :+ last1), LispList(l2.get :+ last2))
+          equal(LispList(l1 :+ last1), LispList(l2 :+ last2))
         case (LispList(l1), LispList(l2)) =>
           Traverse[List].sequence(l1.zip(l2).map(t => equal(t._1, t._2)))
             .map(list => l1.length == l2.length && list.forall(identity))

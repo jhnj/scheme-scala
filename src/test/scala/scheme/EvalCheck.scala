@@ -113,12 +113,13 @@ class EvalCheck extends FlatSpec with Checkers with Matchers {
     val head = LispString("head")
     val tail = LispString("tail")
     val last = LispString("last")
-    val list = LispList(List(head, tail))
+    val lispList = LispList(List(head, tail))
+    val list = List(head, tail)
   }
 
   "car" should "return the head of a list" in {
     val f = carFixture
-    val lispListInput = List(f.list)
+    val lispListInput = List(f.lispList)
     Eval().primitives("car")(lispListInput).right.value should be (f.head)
   }
 
@@ -130,20 +131,21 @@ class EvalCheck extends FlatSpec with Checkers with Matchers {
 
   it should "take only 1 parameter" in {
     val f = carFixture
-    val multipleArgs = List(f.list, f.list)
+    val multipleArgs = List(f.lispList, f.lispList)
     Eval().primitives("car")(multipleArgs).left.value should be (NumArgs(1, multipleArgs))
   }
 
   def cdrFixture = new {
     val head = LispString("head")
     val tail = List(LispString("tail"))
-    val list = LispList(head +: tail)
+    val list = head +: tail
+    val lispList = LispList(head +: tail)
     val last = LispString("last")
   }
 
   "cdr" should "return the tail of a list" in {
     val f = cdrFixture
-    val lispListInput = List(f.list)
+    val lispListInput = List(f.lispList)
     Eval().primitives("cdr")(lispListInput).right.value should be (LispList(f.tail))
   }
 
@@ -162,7 +164,8 @@ class EvalCheck extends FlatSpec with Checkers with Matchers {
   def consFixture = new {
     val head = LispString("head")
     val tail = List(LispString("tail"))
-    val list = LispList(head +: tail)
+    val list = head +: tail
+    val lispList = LispList(list)
     val last = LispString("last")
 
     val cons = Eval().primitives("cons")
@@ -176,26 +179,26 @@ class EvalCheck extends FlatSpec with Checkers with Matchers {
   it should "append to the start of a list" in {
     val f = consFixture
     val params: List[LispVal] = List(f.head, LispList(f.tail))
-    f.cons(params).right.value should be (f.list)
+    f.cons(params).right.value should be (f.lispList)
   }
 
   it should "append to the start of the list part of a dottedList" in {
     val f = consFixture
-    val dottedList = DottedLispList(LispList(f.tail), f.last)
+    val dottedList = DottedLispList(f.tail, f.last)
     val resDottedList = DottedLispList(f.list, f.last)
     f.cons(List(f.head, dottedList)).right.value should be (resDottedList)
   }
 
   it should "combine 2 non lists to a dottedList" in {
     val f = consFixture
-    val resDottedList = DottedLispList(LispList(List(f.head)), f.head)
+    val resDottedList = DottedLispList(List(f.head), f.head)
     f.cons(List(f.head, f.head)).right.value should be (resDottedList)
   }
 
   it should "create a dottedList if the first parameter is a list" in {
     val f = consFixture
-    val resDottedList = DottedLispList(LispList(List(f.list)), f.last)
-    f.cons(List(f.list, f.last)).right.value should be (resDottedList)
+    val resDottedList = DottedLispList(f.list, f.last)
+    f.cons(List(f.lispList, f.last)).right.value should be (resDottedList)
   }
 
   it should "not take more than 2 parameters" in {
@@ -224,7 +227,7 @@ class EvalCheck extends FlatSpec with Checkers with Matchers {
 
   "equal" should "return true when comparing 2 equal dottedLists" in {
     val input = DottedLispList(
-      LispList(List(LispString("string"), LispNumber(1))),
+      List(LispString("string"), LispNumber(1)),
       LispBool(true)
     )
     Eval().primitives("equal?")(List(input, input)).right.value should be (LispBool(true))

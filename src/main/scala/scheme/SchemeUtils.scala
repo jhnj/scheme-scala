@@ -14,7 +14,7 @@ object SchemeUtils {
   sealed trait LispVal
   case class Symbol(name: String) extends LispVal
   case class LispList(get: List[LispVal]) extends LispVal
-  case class DottedLispList(list: LispList, last: LispVal) extends LispVal
+  case class DottedLispList(list: List[LispVal], last: LispVal) extends LispVal
   case class LispNumber(get: Double) extends LispVal
   case class LispString(get: String) extends LispVal
   case class LispChar(get: Char) extends LispVal
@@ -26,7 +26,7 @@ object SchemeUtils {
                   vararg: Option[String],
                   body: List[LispVal],
                   closure: Env) extends LispVal
-  def undefined: LispVal = LispList(List())
+  val undefined: LispVal = LispList(List())
 
 
   sealed trait LispError
@@ -64,7 +64,7 @@ object SchemeUtils {
       case LispList(list) =>
         "(" + list.map(_.format).mkString(" ") + ")"
       case DottedLispList(list, last) =>
-        "(" + list.get.map(_.format).mkString(" ") + " . " + last + ")"
+        "(" + list.map(_.format).mkString(" ") + " . " + last + ")"
       case LispNumber(n) => n.toString
       case LispString(s) => '"' + s + '"'
       case LispChar(c) => "#\\" + c.toString

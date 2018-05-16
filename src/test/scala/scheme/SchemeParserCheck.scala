@@ -97,9 +97,9 @@ class SchemeParserCheck extends FlatSpec with Checkers with Matchers {
   // TODO property based test?
   it should "parse a DottedList" in {
     val inp = "(2 2.1 a \n. \"a\" )"
-    val expected = DottedLispList(LispList(List(
+    val expected = DottedLispList(List(
       LispNumber(2), LispNumber(2.1), Symbol("a")
-    )), LispString("a"))
+    ), LispString("a"))
     SchemeParser.parseExpr(inp).right.value should be(expected)
   }
 

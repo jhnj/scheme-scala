@@ -1,6 +1,6 @@
 package scheme
 
-import java.io.{BufferedReader, BufferedWriter, FileReader, FileWriter}
+import java.io._
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, Paths}
 
@@ -27,7 +27,7 @@ object IOPrimitive {
     def close() = get.close()
   }
 
-  case class Output(get: BufferedWriter, name: String) extends Handle {
+  case class Output(get: PrintWriter, name: String) extends Handle {
     def close() = get.close()
   }
 
@@ -37,7 +37,7 @@ object IOPrimitive {
   }
 
   val openOutputFile: LispIOPrimitive = wrapOpen { file =>
-    val writer = new BufferedWriter(new FileWriter(file))
+    val writer = new PrintWriter(new BufferedWriter(new FileWriter(file)))
     Port(Output(writer, file))
   }
 
@@ -85,8 +85,8 @@ object IOPrimitive {
     case Output(output, name) =>
       EitherT(IO {
         Try {
-          output.write(toWrite.format)
-          output.newLine()
+          output.println(toWrite.format)
+          output.flush()
           LispBool(true)
         }.toEither.leftMap(_ => Default(s"Failed to write file: $name"))
       })
@@ -94,7 +94,10 @@ object IOPrimitive {
     case Input(_, name) => leftT(Default(s"Can't write to file: $name opened for reading"))
   }
 
+  def stdOut = Output(new PrintWriter(System.out), "stdOut")
+
   def writeProc(list: List[LispVal]): IOThrowsError[LispVal] = list match {
+    case List(toWrite) => write(toWrite, stdOut)
     case List(toWrite, Port(handle)) => write(toWrite, handle)
     case List(_, lv) => leftT(TypeMismatch("port", lv))
     case l => leftT(NumArgs(2, l))
@@ -121,7 +124,7 @@ object IOPrimitive {
       Files.readAllLines(Paths.get(fileName), StandardCharsets.UTF_8)
     }
       .toEither
-      .bimap(_ => Default(s"Reading file: $fileName, failed"), list => list.asScala.mkString("\\n"))
+      .bimap(_ => Default(s"Reading file: $fileName, failed"), list => list.asScala.mkString("\n"))
   })
 
   val ioPrimitives: Map[String, LispIOPrimitive] = HashMap(
