@@ -1,6 +1,7 @@
 package scheme
 
 import scheme.SchemeUtils._
+import Eval._
 import cats.instances.either._
 import cats.Apply
 import cats.syntax.either._
@@ -67,6 +68,11 @@ class Eval(val env: Env) {
 
     case LispList(Symbol("lambda") :: varargs :: body) =>
       EitherT.fromEither[IO](makeFunc(List(), Some(varargs), body, env))
+
+    case LispList(List(Symbol("load"), LispString(fileName))) =>
+      IOPrimitive
+        .load(fileName)
+        .flatMap(_.map(lispVal => eval(lispVal)).last)
 
     case LispList(f :: args) => for {
       func <- eval(f)
@@ -160,8 +166,16 @@ class Eval(val env: Env) {
     case _ => leftT(TypeMismatch("function", func))
   }
 
-  def addPrimitiveBindings: IO[List[LispVal]] =
+  def addBindings: IO[List[LispVal]] = for {
+    primitive <- addPrimitiveBindings
+    io <- addIOBindings
+  } yield primitive ++ io
+
+  private def addPrimitiveBindings: IO[List[LispVal]] =
     env.bindVars(primitives.mapValues(PrimitiveFunc).toList)
+
+  private def addIOBindings: IO[List[LispVal]] =
+    env.bindVars(IOPrimitive.ioPrimitives.mapValues(IOFunc).toList)
 
   val numericPrimitives: Map[String, LispPrimitive] = HashMap(
     "+" -> numericOp(_ + _),
@@ -187,13 +201,6 @@ class Eval(val env: Env) {
       Try(string.toDouble).toEither.leftMap(_ => TypeMismatch("number", LispString(string)))
     case LispList(List(elem)) => unpackNumber(elem)
     case notNumber => Left(TypeMismatch("number", notNumber))
-  }
-
-  def oneParameter(func: LispVal => ThrowsError[LispVal])(list: List[LispVal]): ThrowsError[LispVal] = {
-    if (list.length == 1)
-      func(list.head)
-    else
-      Left(NumArgs(1, list))
   }
 
   def symbolCheck(lispVal: LispVal): LispVal = lispVal match {
@@ -405,8 +412,22 @@ object Eval {
   def withPrimitiveBindings(env: Env): IO[Eval] = {
     for {
       eval <- IO.pure(Eval(env))
-      _ <- eval.addPrimitiveBindings
+      _ <- eval.addBindings
     } yield eval
+  }
+
+  def oneParameter(func: LispVal => ThrowsError[LispVal])(list: List[LispVal]): ThrowsError[LispVal] = {
+    if (list.length == 1)
+      func(list.head)
+    else
+      Left(NumArgs(1, list))
+  }
+
+  def oneParameter(func: LispVal => IOThrowsError[LispVal])(list: List[LispVal]): IOThrowsError[LispVal] = {
+    if (list.length == 1)
+      func(list.head)
+    else
+      leftT(NumArgs(1, list))
   }
 }
 

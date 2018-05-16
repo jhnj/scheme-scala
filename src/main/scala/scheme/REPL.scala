@@ -37,7 +37,7 @@ object REPL {
     }
 
     for {
-      _ <- eval.addPrimitiveBindings
+      _ <- eval.addBindings
       _ <- go("Lisp>>>  ")
     } yield ()
   }
