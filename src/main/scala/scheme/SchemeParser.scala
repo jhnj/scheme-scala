@@ -1,15 +1,15 @@
 package scheme
 
-import parser.{ParseError, ParserImplementation, Parsers}
+import parser.{ParserImplementation, Parsers}
 
 import scala.language.higherKinds
 import cats.syntax.either._
-
 import SchemeUtils._
+import parser.ParserUtils.Parser
 
 
 object SchemeParser {
-  def lispParser[Parser[+ _]](P: Parsers[Parser]): Parser[LispVal] = {
+  private def lispParser[Parser[+ _]](P: Parsers[Parser]): Parser[LispVal] = {
     import P._
 
     def symbol: Parser[String] = oneOf("!#$%&|*/:+-<=>?@^_~").map(_.toString)
@@ -45,12 +45,6 @@ object SchemeParser {
     def parseNumber: Parser[LispNumber] =
       double.or(integer.map(_.toDouble)).map(LispNumber)
 
-    //    def parseInt: Parser[LispInt] =
-    //      integer.map(LispInt) label "LispInt"
-    //
-    //    def parseFloat: Parser[LispFloat] =
-    //      double.map(d => LispFloat(d.toFloat)) label "LispFloat"
-
     def parseList: Parser[LispList] =
       attempt(surround(token("("), ")")(
         token(parseExpr.separator(whitespace1).map(LispList))
@@ -73,9 +67,22 @@ object SchemeParser {
     whitespace *> parseExpr
   }
 
+  private def readOrThrow[A](parser: Parser[A])(input: String): ThrowsError[A] = {
+    ParserImplementation
+      .run(parser)(input)
+      .leftMap(scheme.SchemeUtils.ParseError)
+  }
+
   def parseExpr(input: String): ThrowsError[LispVal] = {
-    val lispParser = SchemeParser.lispParser(ParserImplementation)
-    ParserImplementation.run(lispParser)(input).leftMap(scheme.SchemeUtils.ParseError)
+    val parser: Parser[LispVal] = SchemeParser.lispParser(ParserImplementation)
+    readOrThrow(parser)(input)
+  }
+
+  def parseExprList(input: String): ThrowsError[List[LispVal]] = {
+    val parser: Parser[LispVal] = SchemeParser.lispParser(ParserImplementation)
+    import ParserImplementation._
+    val listParser = parser.separator(whitespace1)
+    readOrThrow(listParser)(input)
   }
 
 
