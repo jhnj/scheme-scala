@@ -17,8 +17,6 @@ import scala.collection.immutable.HashMap
 import scala.util.Try
 
 class Eval(val env: Env) {
-  type LispPrimitives = Map[String, List[LispVal] => ThrowsError[LispVal]]
-  type LispIOPrimitives = Map[String, List[LispVal] => IOThrowsError[LispVal]]
 
   def eval(lispVal: LispVal): IOThrowsError[LispVal] = lispVal match {
     case s: LispString => rightT(s)
@@ -136,10 +134,12 @@ class Eval(val env: Env) {
 
   def applyFunction(func: LispVal)(args: List[LispVal]): IOThrowsError[LispVal] = func match {
     case PrimitiveFunc(f) => liftThrows(f(args))
-    case Func(params, vararg, body, closure) => {
+    case IOFunc(f) => f(args)
+    case Func(params, vararg, body, c) =>
       if (params.length != args.length && vararg.isEmpty)
         leftT(NumArgs(params.length, args))
       else {
+        val closure = c.copy
         for {
           _ <- EitherT.right(closure.bindVars(params.zip(args)))
           _ <- vararg match {
@@ -156,14 +156,14 @@ class Eval(val env: Env) {
           }
         } yield res
       }
-    }
-    case _ => leftT(BadSpecialForm("applyF", func))
+
+    case _ => leftT(TypeMismatch("function", func))
   }
 
   def addPrimitiveBindings: IO[List[LispVal]] =
     env.bindVars(primitives.mapValues(PrimitiveFunc).toList)
 
-  val numericPrimitives: LispPrimitives = HashMap(
+  val numericPrimitives: Map[String, LispPrimitive] = HashMap(
     "+" -> numericOp(_ + _),
     "-" -> numericOp(_ - _),
     "*" -> numericOp(_ * _),
@@ -211,7 +211,7 @@ class Eval(val env: Env) {
     case _ => LispBool(false)
   }
 
-  val typeTestingPrimitives: LispPrimitives = HashMap(
+  val typeTestingPrimitives: Map[String, LispPrimitive] = HashMap(
     "symbol?" -> oneParameter((symbolCheck _).andThen(Right(_))),
     "string?" -> oneParameter((stringCheck _).andThen(Right(_))),
     "number?" -> oneParameter((numberCheck _).andThen(Right(_)))
@@ -229,9 +229,9 @@ class Eval(val env: Env) {
     case List(lispVal) => Left(TypeMismatch("Symbol", lispVal))
   }
 
-  val symbolPrimitives: LispPrimitives = HashMap(
-    "symbol->string" -> (symbolString _),
-    "string->symbol" -> (stringSymbol _)
+  val symbolPrimitives: Map[String, LispPrimitive] = HashMap(
+    "symbol->string" -> symbolString _,
+    "string->symbol" -> stringSymbol _
   )
 
   def boolBinOp[A](unpacker: LispVal => ThrowsError[A])
@@ -265,7 +265,7 @@ class Eval(val env: Env) {
   val booleanBoolBinOp: BoolBinOp[Boolean] = boolBinOp(unpackBoolean)
   val stringBoolBinOp: BoolBinOp[String] = boolBinOp(unpackString)
 
-  val booleanPrimitives: LispPrimitives = HashMap(
+  val booleanPrimitives: Map[String, LispPrimitive] = HashMap(
     "=" -> numberBoolBinOp(_ == _),
     "<" -> numberBoolBinOp(_ < _),
     ">" -> numberBoolBinOp(_ > _),
@@ -325,10 +325,10 @@ class Eval(val env: Env) {
     }
   ))
 
-  val listPrimitives: LispPrimitives = HashMap(
+  val listPrimitives: Map[String, LispPrimitive] = HashMap(
     "car" -> oneParameter(car),
     "cdr" -> oneParameter(cdr),
-    "cons" -> (cons _),
+    "cons" -> cons _,
     "list?" -> oneParameter(isList),
     "null?" -> oneParameter(isNull)
   )
@@ -370,22 +370,22 @@ class Eval(val env: Env) {
       }
     } yield shallow || nested
 
-  val equalityPrimitives: LispPrimitives = HashMap(
-    "=" -> (equalityOp(numericEqual) _),
-    "eqv?" -> (equalityOp(eqv) _),
-    "equal?" -> (equalityOp(equal) _)
+  val equalityPrimitives: Map[String, LispPrimitive] = HashMap(
+    "=" -> equalityOp(numericEqual) _,
+    "eqv?" -> equalityOp(eqv) _,
+    "equal?" -> equalityOp(equal) _
   )
 
 
-  val charPrimitives: LispPrimitives = HashMap(
+  val charPrimitives: Map[String, LispPrimitive] = HashMap(
     // TODO http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-9.html#%_sec_6.3.4
   )
 
-  val stringPrimitives: LispPrimitives = HashMap(
+  val stringPrimitives: Map[String, LispPrimitive] = HashMap(
     // TODO http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-9.html#%_sec_6.3.5
   )
 
-  val primitives: LispPrimitives =
+  val primitives: Map[String, LispPrimitive] =
     numericPrimitives ++
       typeTestingPrimitives ++
       symbolPrimitives ++

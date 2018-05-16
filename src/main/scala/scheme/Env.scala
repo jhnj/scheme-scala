@@ -5,13 +5,11 @@ import cats.effect.IO
 import cats.syntax.either._
 import cats.instances.list._
 import cats.syntax.traverse._
-
 import scheme.SchemeUtils._
 
-import scala.collection.mutable
-import scala.collection.immutable
+import scala.collection.{immutable, mutable}
 
-class Env(private val env: mutable.Map[String, LispVal] = mutable.HashMap()) {
+class Env(val env: mutable.Map[String, LispVal] = mutable.HashMap()) {
 
   def isBound(variable: String): IO[Boolean] = IO(env.isDefinedAt(variable))
 
@@ -38,7 +36,7 @@ class Env(private val env: mutable.Map[String, LispVal] = mutable.HashMap()) {
       .sequence
 
 
-  def g = env
+  def copy = Env(immutable.HashMap() ++ this.env.toList)
 }
 
 object Env {

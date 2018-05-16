@@ -1,13 +1,15 @@
 package scheme
 
-import cats.Id
 import cats.data.EitherT
 import cats.effect.IO
 
+import IOPrimitive.Handle
 import scheme.SchemeUtils.FormatSyntax._
 import scheme.SchemeUtils.Format._
 
 object SchemeUtils {
+  type LispPrimitive = List[LispVal] => ThrowsError[LispVal]
+  type LispIOPrimitive = List[LispVal] => IOThrowsError[LispVal]
 
   sealed trait LispVal
   case class Symbol(name: String) extends LispVal
@@ -17,7 +19,9 @@ object SchemeUtils {
   case class LispString(get: String) extends LispVal
   case class LispChar(get: Char) extends LispVal
   case class LispBool(get: Boolean) extends LispVal
-  case class PrimitiveFunc(func: List[LispVal] => ThrowsError[LispVal]) extends LispVal
+  case class PrimitiveFunc(func: LispPrimitive) extends LispVal
+  case class IOFunc(func: LispIOPrimitive) extends LispVal
+  case class Port(handle: Handle) extends LispVal
   case class Func(params: List[String],
                   vararg: Option[String],
                   body: List[LispVal],
@@ -68,6 +72,8 @@ object SchemeUtils {
         if (b) "#t"
         else "#f"
       case _: PrimitiveFunc => "<primitive>"
+      case _: IOFunc => "<IO primitive>"
+      case _: Port => "<IO port>"
       case Func(params, vararg, body, closure) =>
         "(lambda (" + {params.mkString(" ") +
           vararg.map(" . " + _).getOrElse("") +
@@ -84,6 +90,7 @@ object SchemeUtils {
         s"Expected $expected args, found values ${found.map(l => l.format).mkString(" ")}"
       case TypeMismatch(expected, found) => s"Invalid type: expected $expected, found ${found.format}"
       case ParseError(parseError) => s"Parse error:\n$parseError"
+      case Default(msg) => msg
     }
 
     implicit val throwsErrorToString: Format[ThrowsError[LispVal]] = {
