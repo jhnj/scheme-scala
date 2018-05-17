@@ -73,7 +73,7 @@ class Eval(val env: Env) {
       IOPrimitive
         .load(fileName)
         .flatMap(_.traverse { lispVal =>
-          /*_*/eval(lispVal)/*_*/
+          /*_*/ eval(lispVal) /*_*/
         }).map(LispList)
 
     case LispList(f :: args) => for {
@@ -168,6 +168,14 @@ class Eval(val env: Env) {
     case _ => leftT(TypeMismatch("function", func))
   }
 
+  def applyF(list: List[LispVal]): IOThrowsError[LispVal] = list match {
+    case func :: allArgs => allArgs match {
+      case args :+ LispList(listArgs) => applyFunction(func)(args ++ listArgs)
+      case _ => leftT(NumArgs(2, list))
+    }
+    case _ => leftT(NumArgs(2, list))
+  }
+
   def addBindings: IO[List[LispVal]] = for {
     primitive <- addPrimitiveBindings
     io <- addIOBindings
@@ -177,7 +185,10 @@ class Eval(val env: Env) {
     env.bindVars(primitives.mapValues(PrimitiveFunc).toList)
 
   private def addIOBindings: IO[List[LispVal]] =
-    env.bindVars(IOPrimitive.ioPrimitives.mapValues(IOFunc).toList)
+    env.bindVars(
+      (IOPrimitive.ioPrimitives + ("apply" -> applyF _))
+        .mapValues(IOFunc).toList
+    )
 
   val numericPrimitives: Map[String, LispPrimitive] = HashMap(
     "+" -> numericOp(_ + _),
@@ -328,19 +339,11 @@ class Eval(val env: Env) {
     }
   ))
 
-  def isNull(lispVal: LispVal): ThrowsError[LispVal] = Right(LispBool(
-    lispVal match {
-      case LispList(List()) => true
-      case _ => false
-    }
-  ))
-
   val listPrimitives: Map[String, LispPrimitive] = HashMap(
     "car" -> oneParameter(car),
     "cdr" -> oneParameter(cdr),
     "cons" -> cons _,
     "list?" -> oneParameter(isList),
-    "null?" -> oneParameter(isNull)
   )
 
   def equalityOp(op: (LispVal, LispVal) => ThrowsError[Boolean])(args: List[LispVal]): ThrowsError[LispBool] = {
@@ -363,6 +366,7 @@ class Eval(val env: Env) {
         case (LispBool(b1), LispBool(b2)) => b1 && b2
         case (LispString(s1), LispString(s2)) => s1 == s2
         case (Symbol(s1), Symbol(s2)) => s1 == s2
+        case (LispList(List()), LispList(List())) => true
         case _ => false
       })
     })
